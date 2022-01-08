@@ -35,14 +35,13 @@ contract PaymentRouter is AccessControlEnumerable {
     ) external {
         _onlyStrategistOrOwner();
 
-        splitterForStrategy[_strategy] = address(
+        address splitterAddr = address(
             new PaymentSplitter(_strategists, _shares)
         );
+        splitterForStrategy[_strategy] = splitterAddr;
 
         for (uint256 i; i < _strategists.length; i++) {
-            splittersForStrategist[_strategists[i]].push(
-                splitterForStrategy[_strategy]
-            );
+            splittersForStrategist[_strategists[i]].push(splitterAddr);
         }
     }
 
@@ -53,18 +52,15 @@ contract PaymentRouter is AccessControlEnumerable {
      * from msg.sender
      *
      * @dev must be called directly from a startegy
-     *      that is registered herein.
+     *      that is registered with this router.
      */
     function routePayment(IERC20 _token, uint256 _amount) external {
         require(_amount != 0, "!0");
-        require(splitterForStrategy[msg.sender] != address(0), "!registered");
 
-        SafeERC20.safeTransferFrom(
-            _token,
-            msg.sender,
-            splitterForStrategy[msg.sender],
-            _amount
-        );
+        address splitterAddr = splitterForStrategy[msg.sender];
+        require(splitterAddr != address(0), "!registered");
+
+        SafeERC20.safeTransferFrom(_token, msg.sender, splitterAddr, _amount);
     }
 
     /**
@@ -77,6 +73,7 @@ contract PaymentRouter is AccessControlEnumerable {
     function release(address _token) external onlyRole(STRATEGIST) {
         address[] storage splitters = splittersForStrategist[msg.sender];
         for (uint256 i; i < splitters.length; i++) {
+            // don't revert whole tx if individual splitter owes nothing
             try
                 IPaymentSplitter(splitters[i]).release(_token, msg.sender)
             {} catch {}
